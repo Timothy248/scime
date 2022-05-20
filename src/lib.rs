@@ -2,13 +2,13 @@ use std::ops::{AddAssign, SubAssign};
 use std::sync::atomic::AtomicUsize;
 use std::thread;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock, Condvar, Mutex};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 pub struct Scatter<S: 'static + Send, T: 'static + Send> {
     area: usize, // max thread count
     function: fn(T) -> S,
-    values: Arc<RwLock<HashMap<usize, S>>>,
+    pub values: Arc<RwLock<HashMap<usize, S>>>,
     current_id: AtomicUsize,
     threads: Arc<RwLock<usize>>
 }
@@ -23,7 +23,7 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
     } 
 
     pub fn feed(&mut self, data: T) -> usize { // feed argument then scatter it
-        while self.threads.read().unwrap().ge(&self.area) { thread::sleep(Duration::from_millis(1)); }
+        while self.active_threads().ge(&self.area) { thread::sleep(Duration::from_millis(1)); }
         
         let id = self.current_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let values = Arc::clone(&self.values);
@@ -37,7 +37,10 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
             threads.write().expect("RwLock poisoned").sub_assign(1);
         });
         return id
-    } 
+    }
+
+    pub fn active_threads(&self) -> usize{ *self.threads.read().unwrap() }
+
 }
 
 // feed returns id once function is evaluated hashmap[id] contains value
