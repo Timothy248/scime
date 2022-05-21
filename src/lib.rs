@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock, Mutex, atomic::AtomicUsize};
 
 pub struct Scatter<S: 'static + Send, T: 'static + Send> {
     area: usize, // max thread count
-    function: Arc<fn(T) -> S>,
+    function: Arc<fn(T) -> Option<S>>,
     results: Arc<RwLock<HashMap<usize, S>>>,
     current_id: AtomicUsize,
     eaters: Arc<RwLock<usize>>,
@@ -13,7 +13,7 @@ pub struct Scatter<S: 'static + Send, T: 'static + Send> {
 }
 
 impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
-    pub fn new(area: usize, queue_limit: usize, function: fn(T)->S) -> Self { // new: provide function, arguments
+    pub fn new(area: usize, queue_limit: usize, function: fn(T)->Option<S>) -> Self { // new: provide function, arguments
         let _area = if area == 0 { usize::MAX } else { area };
         let _queue_limit = if queue_limit == 0 { usize::MAX } else { queue_limit };
 
@@ -52,13 +52,16 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
                     Some((cur_id, cur_data)) => {
                         drop(lock);
                         let result = function(cur_data);
-                        results.write().unwrap().insert(cur_id, result);
+                        match result {
+                            Some(value) => results.write().unwrap().insert(cur_id, value),
+                            None => None
+                        };
                     },
                     None => {
                         drop(lock);
                         has_data = false;
                     }
-                }
+                };
             }
 
             eaters.write().unwrap().sub_assign(1);
