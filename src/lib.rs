@@ -2,7 +2,7 @@ use std::ops::{AddAssign, SubAssign};
 use std::{collections::HashMap, thread} ;
 use std::sync::{Arc, RwLock, Mutex, atomic::AtomicUsize};
 
-pub struct Scatter<S: 'static + Send, T: 'static + Send> {
+pub struct Scatter<S, T> {
     area: usize, // max thread count
     function: Arc<fn(T) -> Option<S>>,
     results: Arc<RwLock<HashMap<usize, S>>>,
@@ -12,7 +12,7 @@ pub struct Scatter<S: 'static + Send, T: 'static + Send> {
     queue_limit: usize,
 }
 
-impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
+impl<S: 'static + Send + Sync, T: 'static + Send> Scatter<S, T> {
     pub fn new(area: usize, queue_limit: usize, function: fn(T)->Option<S>) -> Self { // new: provide function, arguments
         let _area = if area == 0 { usize::MAX } else { area };
         let _queue_limit = if queue_limit == 0 { usize::MAX } else { queue_limit };
@@ -41,16 +41,18 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
         let function = Arc::clone(&self.function);
         let eaters = Arc::clone(&self.eaters);
 
-        self.eaters.write().unwrap().add_assign(1);
+        let mut lock = self.eaters.write().unwrap();
+        lock.add_assign(1);
+        drop(lock);
         thread::spawn(move || {
             let mut has_data = true;
 
             while has_data {
                 let mut lock = data.lock().unwrap();
-
-                match lock.pop() {
+                let d = lock.pop();
+                drop(lock);
+                match d {
                     Some((cur_id, cur_data)) => {
-                        drop(lock);
                         let result = function(cur_data);
                         match result {
                             Some(value) => results.write().unwrap().insert(cur_id, value),
@@ -58,7 +60,6 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
                         };
                     },
                     None => {
-                        drop(lock);
                         has_data = false;
                     }
                 };
@@ -70,10 +71,14 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
 
     pub fn feed(&self, data: T) -> Option<usize> { // feed data get data processing id
         let mut lock = self.data.lock().unwrap();
-        if lock.len() >= self.queue_limit { return None }
+        if lock.len() >= self.queue_limit { 
+            drop(lock);
+            return None
+        }
 
         let id = self.current_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         lock.push((id, data));
+        drop(lock);
         self.eat();
         return Some(id);
     }
