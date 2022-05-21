@@ -79,7 +79,7 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
     }
 
     pub fn get_eaters(&self) -> usize{ *self.eaters.read().unwrap() }
-    pub fn get_results(&self) -> HashMap<usize, S> { self.results.write().unwrap().drain().collect() }
+    pub fn drain_results(&self) -> HashMap<usize, S> { self.results.write().unwrap().drain().collect() }
     pub fn get_queue_length(&self) -> usize { self.data.lock().unwrap().len() }
 
 }
