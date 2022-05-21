@@ -2,7 +2,7 @@
 Scime : distribute tasks autonomous
 
 ## Usage:
-```
+```rust
 use scime::Scatter;
 
 let scatter = Scatter::new(10, 10, |data| {
