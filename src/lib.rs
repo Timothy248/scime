@@ -41,7 +41,9 @@ impl<S: 'static + Send + Sync, T: 'static + Send> Scatter<S, T> {
         let function = Arc::clone(&self.function);
         let eaters = Arc::clone(&self.eaters);
 
-        self.eaters.write().unwrap().add_assign(1);
+        let mut lock = self.eaters.write().unwrap();
+        lock.add_assign(1);
+        drop(lock);
         thread::spawn(move || {
             let mut has_data = true;
 
