@@ -8,18 +8,21 @@ pub struct Scatter<S: 'static + Send, T: 'static + Send> {
     results: Arc<RwLock<HashMap<usize, S>>>,
     current_id: AtomicUsize,
     eaters: Arc<RwLock<usize>>,
-    data: Arc<Mutex<Vec<(usize, T)>>>
+    data: Arc<Mutex<Vec<(usize, T)>>>,
+    queue_limit: usize,
 }
 
 impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
-    pub fn new(area: usize, function: fn(T)->S) -> Self { // new: provide function, arguments
-        if area == 0 { panic!("Scatter.area must be bigger than 0") }
-        Scatter { area, 
+    pub fn new(area: usize, queue_limit: usize, function: fn(T)->S) -> Self { // new: provide function, arguments
+        let _area = if area == 0 { usize::MAX } else { area };
+        let _queue_limit = if queue_limit == 0 { usize::MAX } else { queue_limit };
+
+        Scatter { area: _area, queue_limit: _queue_limit,
             function: Arc::new(function), 
             results: Arc::new(RwLock::new(HashMap::new())),
             current_id: AtomicUsize::new(0),
             eaters: Arc::new(RwLock::new(0)),
-            data: Arc::new(Mutex::new(Vec::new()))
+            data: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -62,11 +65,14 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
         });
     }
 
-    pub fn feed(&self, data: T) -> usize { // feed data get data processing id
+    pub fn feed(&self, data: T) -> Option<usize> { // feed data get data processing id
+        let mut lock = self.data.lock().unwrap();
+        if lock.len() >= self.queue_limit { return None }
+
         let id = self.current_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.data.lock().unwrap().push((id, data));
+        lock.push((id, data));
         self.eat();
-        return id;
+        return Some(id);
     }
 
     pub fn get_eaters(&self) -> usize{ *self.eaters.read().unwrap() }
