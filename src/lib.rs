@@ -13,6 +13,7 @@ pub struct Scatter<S: 'static + Send, T: 'static + Send> {
 
 impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
     pub fn new(area: usize, function: fn(T)->S) -> Self { // new: provide function, arguments
+        if area == 0 { panic!("Scatter.area must be bigger than 0") }
         Scatter { area, 
             function: Arc::new(function), 
             results: Arc::new(RwLock::new(HashMap::new())),
@@ -46,12 +47,15 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
 
                 match lock.pop() {
                     Some((cur_id, cur_data)) => {
+                        drop(lock);
                         let result = function(cur_data);
                         results.write().unwrap().insert(cur_id, result);
                     },
-                    None => has_data = false
+                    None => {
+                        drop(lock);
+                        has_data = false;
+                    }
                 }
-                drop(lock);
             }
 
             eaters.write().unwrap().sub_assign(1);
@@ -66,7 +70,8 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
     }
 
     pub fn get_eaters(&self) -> usize{ *self.eaters.read().unwrap() }
-
     pub fn get_results(&self) -> HashMap<usize, S> { self.results.write().unwrap().drain().collect() }
+    pub fn get_queue_length(&self) -> usize { self.data.lock().unwrap().len() }
+
 }
 
