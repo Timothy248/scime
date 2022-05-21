@@ -12,6 +12,6 @@ let scatter = Scatter::new(10, 10, |data| {
 
 let id = scatter.feed(data);
 
-/* results are available when the threads have processed all data */
+/* results are available when the threads have processed given data */
 let result = scatter.drain_results().get(id);
 ```
