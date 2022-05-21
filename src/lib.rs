@@ -1,3 +1,4 @@
+use std::collections::hash_map::Drain;
 use std::ops::{AddAssign, SubAssign};
 use std::{collections::HashMap, thread} ;
 use std::sync::{Arc, RwLock, Mutex, atomic::AtomicUsize};
@@ -5,7 +6,7 @@ use std::sync::{Arc, RwLock, Mutex, atomic::AtomicUsize};
 pub struct Scatter<S: 'static + Send, T: 'static + Send> {
     area: usize, // max thread count
     function: Arc<fn(T) -> S>,
-    pub values: Arc<RwLock<HashMap<usize, S>>>,
+    results: Arc<RwLock<HashMap<usize, S>>>,
     current_id: AtomicUsize,
     eaters: Arc<RwLock<usize>>,
     data: Arc<Mutex<Vec<(usize, T)>>>
@@ -15,7 +16,7 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
     pub fn new(area: usize, function: fn(T)->S) -> Self { // new: provide function, arguments
         Scatter { area, 
             function: Arc::new(function), 
-            values: Arc::new(RwLock::new(HashMap::new())),
+            results: Arc::new(RwLock::new(HashMap::new())),
             current_id: AtomicUsize::new(0),
             eaters: Arc::new(RwLock::new(0)),
             data: Arc::new(Mutex::new(Vec::new()))
@@ -33,7 +34,7 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
 
     fn dispatch_eater(&self) {
         let data = Arc::clone(&self.data);
-        let values = Arc::clone(&self.values);
+        let results = Arc::clone(&self.results);
         let function = Arc::clone(&self.function);
         let eaters = Arc::clone(&self.eaters);
 
@@ -47,7 +48,7 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
                 match lock.pop() {
                     Some((cur_id, cur_data)) => {
                         let result = function(cur_data);
-                        values.write().unwrap().insert(cur_id, result);
+                        results.write().unwrap().insert(cur_id, result);
                     },
                     None => has_data = false
                 }
@@ -58,7 +59,7 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
         });
     }
 
-    pub fn feed(&mut self, data: T) -> usize { // feed data get data processing id
+    pub fn feed(&self, data: T) -> usize { // feed data get data processing id
         let id = self.current_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.data.lock().unwrap().push((id, data));
         self.eat();
@@ -66,5 +67,7 @@ impl<S: 'static + Send + std::marker::Sync, T: 'static + Send> Scatter<S, T> {
     }
 
     pub fn get_eaters(&self) -> usize{ *self.eaters.read().unwrap() }
+
+    pub fn get_results(&self) -> HashMap<usize, S> { self.results.write().unwrap().drain().collect() }
 }
 
