@@ -16,6 +16,7 @@ pub struct Scatter<S, T> {
 }
 
 impl<S: 'static + Send + Sync, T: 'static + Send> Scatter<S, T> {
+    
     pub fn new(area: usize, queue_limit: usize, function: fn(T)->Option<S>) -> Self { 
         let _area = if area == 0 { usize::MAX } else { area };
         let _queue_limit = if queue_limit == 0 { usize::MAX } else { queue_limit };
@@ -71,7 +72,7 @@ impl<S: 'static + Send + Sync, T: 'static + Send> Scatter<S, T> {
         lock.push((id, data)); drop(lock);
         
         self.eat();
-        
+
         return Some(id);
     }
 
