@@ -1,6 +1,6 @@
 use std::ops::{AddAssign, SubAssign};
-use std::{collections::HashMap, thread};
-use std::sync::{Arc, RwLock, Mutex, atomic::AtomicUsize};
+use std::thread;
+use std::sync::{Arc, RwLock, Mutex};
 
 pub struct Scatter<S, T, I> {
     area: usize,
