@@ -4,36 +4,32 @@ use std::sync::{Arc, RwLock, Mutex, atomic::AtomicUsize};
 
 pub struct Scatter<S, T, I> {
     area: usize,
-    queue_limit: usize,
-    
     eaters: Arc<RwLock<usize>>,
 
     function: Arc<fn(T) -> Option<S>>,
-    current_id: AtomicUsize,
-
     iterator: Arc<Mutex<I>>,
-    results: Arc<RwLock<HashMap<usize, S>>>
+    results: Arc<RwLock<Vec<S>>>
 }
 
-impl<S: 'static + Send + Sync, T: 'static + Send> Scatter<S, T> {
+impl<S: 'static + Send + Sync, T: 'static + Send, I: 'static + Send + Iterator<Item = T>> Scatter<S, T, I> {
     
-    pub fn new(area: usize, queue_limit: usize, function: fn(T)->Option<S>) -> Self { 
+    pub fn new(iterator: I, area: usize, function: fn(T)->Option<S>) -> Self where I: Iterator<Item = T> { 
         let _area = if area == 0 { usize::MAX } else { area };
-        let _queue_limit = if queue_limit == 0 { usize::MAX } else { queue_limit };
 
-        Scatter { area: _area, queue_limit: _queue_limit,
+        let scatter = Scatter { area: _area,
             function: Arc::new(function), 
-            results: Arc::new(RwLock::new(HashMap::new())),
-            current_id: AtomicUsize::new(0),
+            results: Arc::new(RwLock::new(Vec::new())),
             eaters: Arc::new(RwLock::new(0)),
-            data: Arc::new(Mutex::new(Vec::new())),
-        }
+            iterator: Arc::new(Mutex::new(iterator)),
+        };
+        scatter.eat();
+        return scatter
     }
 
-    fn eat(&self) { if self.get_eaters() < self.area { self.dispatch_eater() } }
+    fn eat(&self) { for _ in 0..self.area {self.dispatch_eater()} } 
 
     fn dispatch_eater(&self) {
-        let data = Arc::clone(&self.data);
+        let iterator = Arc::clone(&self.iterator);
         let results = Arc::clone(&self.results);
         let function = Arc::clone(&self.function);
         let eaters = Arc::clone(&self.eaters);
@@ -45,14 +41,14 @@ impl<S: 'static + Send + Sync, T: 'static + Send> Scatter<S, T> {
             let mut has_data = true;
 
             while has_data {
-                let mut lock = data.lock().unwrap();
-                let _data = lock.pop(); drop(lock);
+                let mut lock = iterator.lock().unwrap();
+                let _data = lock.next(); drop(lock);
 
                 match _data {
-                    Some((cur_id, cur_data)) => {
+                    Some(cur_data) => {
                         let result = function(cur_data);
                         match result {
-                            Some(value) => { results.write().unwrap().insert(cur_id, value); },
+                            Some(value) => { results.write().unwrap().push(value) },
                             None => ()
                         };
                     },
@@ -64,20 +60,7 @@ impl<S: 'static + Send + Sync, T: 'static + Send> Scatter<S, T> {
         });
     }
 
-    pub fn feed(&self, data: T) -> Option<usize> {
-        let mut lock = self.data.lock().unwrap();
-        if lock.len() >= self.queue_limit { return None }
-
-        let id = self.current_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        lock.push((id, data)); drop(lock);
-        
-        self.eat();
-        
-        return Some(id);
-    }
-
     pub fn get_eaters(&self) -> usize{ *self.eaters.read().unwrap() }
-    pub fn drain_results(&self) -> HashMap<usize, S> { self.results.write().unwrap().drain().collect() }
-    pub fn get_queue_length(&self) -> usize { self.data.lock().unwrap().len() }
+    pub fn drain_results(&self) -> Vec<S> { self.results.write().unwrap().drain(..).collect() }
 
 }
